@@ -1,0 +1,167 @@
+diff --git a/src/display.c b/src/display.c
+index d0ed6a4..d92ae39 100644
+--- a/src/display.c
++++ b/src/display.c
+@@ -51,6 +51,7 @@ static int  DoAddChar __P((int));
+ static int  BlankResize __P((int, int));
+ static int  CallRewrite __P((int, int, int, int));
+ static void disp_readev_fn __P((struct event *, char *));
++static void disp_mouseev_fn __P((struct event *, char *));
+ static void disp_processinput __P((struct display *, unsigned char *, int));
+ static void disp_writeev_fn __P((struct event *, char *));
+ #ifdef linux
+@@ -130,6 +131,7 @@ struct display TheDisplay;
+ int defobuflimit = OBUF_MAX;
+ int defnonblock = -1;
+ int defmousetrack = 0;
++int maptimeout = 300;
+ #ifdef AUTO_NUKE
+ int defautonuke = 0;
+ #endif
+@@ -265,6 +267,9 @@ struct mode *Mode;
+   D_writeev.condpos = &D_obuflen;
+   D_writeev.condneg = &D_obuffree;
+   evenq(&D_writeev);
++  D_mouseev.type = EV_TIMEOUT;
++  D_mouseev.data = (char *)display;
++  D_mouseev.handler = disp_mouseev_fn;
+   D_statusev.type = EV_TIMEOUT;
+   D_statusev.data = (char *)display;
+   D_statusev.handler = disp_status_fn;
+@@ -3411,6 +3416,8 @@ char *data;
+ 
+   display = (struct display *)data;
+ 
++  evdeq(&D_mouseev);
++
+   /* Hmmmm... a bit ugly... */
+   if (D_forecv)
+     for (cv = D_forecv->c_layer->l_cvlist; cv; cv = cv->c_lnext)
+@@ -3721,6 +3728,8 @@ char *data;
+         {
+           /* suppress partial sequence at end */
+           size = mark? mark - buf : 0;
++          SetTimeout(&D_mouseev, maptimeout);
++          evenq(&D_mouseev);
+         }
+     }
+ 
+@@ -3728,6 +3737,85 @@ char *data;
+     disp_processinput(display, buf, size);
+ }
+ 
++static void
++disp_mouseev_fn(ev, data)
++struct event *ev;
++char *data;
++{
++  int size = 0;
++  int saved_maptimeout;
++  char bufspace[MAX_MOUSE_SEQUENCE];
++  unsigned char *buf = bufspace + MAX_MOUSE_SEQUENCE;
++
++  display = (struct display *)data;
++
++  switch (D_mouse_parse.state)
++    {
++    case CSI_PY:
++      if (D_mouse_parse.sgrmode) {
++        for (int i = D_mouse_parse.params[CSI_PY]; i != 0; i = i / 10) {
++          *(--buf) = (i % 10) + '0';
++          ++size;
++        }
++        *(--buf) = ';';
++        ++size;
++      } else {
++        *(--buf) = D_mouse_parse.params[CSI_PY];
++        ++size;
++      }
++      /* fall through */
++
++    case CSI_PX:
++      if (D_mouse_parse.sgrmode) {
++        for (int i = D_mouse_parse.params[CSI_PX]; i != 0; i = i / 10) {
++          *(--buf) = (i % 10) + '0';
++          ++size;
++        }
++        *(--buf) = ';';
++        ++size;
++      } else {
++        *(--buf) = D_mouse_parse.params[CSI_PX];
++        ++size;
++      }
++      /* fall through */
++
++    case CSI_PB:
++      if (D_mouse_parse.sgrmode) {
++        for (int i = D_mouse_parse.params[CSI_PB]; i != 0; i = i / 10) {
++          *(--buf) = (i % 10) + '0';
++          ++size;
++        }
++        *(--buf) = '<';
++        ++size;
++      } else {
++        *(--buf) = D_mouse_parse.params[CSI_PB];
++        ++size;
++        *(--buf) = 'M';
++        ++size;
++      }
++      /* fall through */
++
++    case CSI_BEGIN:
++      *(--buf) = '[';
++      ++size;
++      /* fall through */
++
++    case CSI_ESC_SEEN:
++      *(--buf) = '\033';
++      ++size;
++      break;
++
++    default:
++      break;
++    };
++
++  D_mouse_parse.state = CSI_INACTIVE;
++  saved_maptimeout = maptimeout;
++  maptimeout = 0;
++  disp_processinput(display, buf, size);
++  maptimeout = saved_maptimeout;
++}
++
+ static void
+ disp_processinput(display, buf, size)
+      struct display* display;
+diff --git a/src/display.h b/src/display.h
+index 459cc5d..b7f852e 100644
+--- a/src/display.h
++++ b/src/display.h
+@@ -135,6 +135,7 @@ struct display
+   int	d_userfd;		/* fd of the tty */
+   struct event d_readev;	/* userfd read event */
+   struct event d_writeev;	/* userfd write event */
++  struct event d_mouseev;	/* mouse timeout event */
+   struct event d_blockedev;	/* blocked timeout */
+   struct mode d_OldMode;	/* tty mode when screen was started */
+   struct mode d_NewMode;	/* New tty mode */
+@@ -300,6 +301,7 @@ extern struct display TheDisplay;
+ #define D_loginhost	DISPLAY(d_loginhost)
+ #define D_readev	DISPLAY(d_readev)
+ #define D_writeev	DISPLAY(d_writeev)
++#define D_mouseev	DISPLAY(d_mouseev)
+ #define D_blockedev	DISPLAY(d_blockedev)
+ #define D_mapev		DISPLAY(d_mapev)
+ #define D_blocked	DISPLAY(d_blocked)
+diff --git a/src/process.c b/src/process.c
+index 004b22a..61d39c6 100644
+--- a/src/process.c
++++ b/src/process.c
+@@ -237,7 +237,7 @@ struct action dmtab[KMAP_KEYS+KMAP_AKEYS];
+ struct action mmtab[KMAP_KEYS+KMAP_AKEYS];
+ struct kmap_ext *kmap_exts;
+ int kmap_extn;
+-static int maptimeout = 300;
++extern int maptimeout;
+ #endif
+ 
+ #ifndef MAX_DIGRAPH

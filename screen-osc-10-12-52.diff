@@ -1,0 +1,116 @@
+diff --git a/src/ansi.c b/src/ansi.c
+index 9ee4ffa..78f7822 100644
+--- a/src/ansi.c
++++ b/src/ansi.c
+@@ -1263,11 +1263,32 @@ static int StringEnd(Window *win)
+ 			}
+ 			break;
+ 		}
+-		if (typ == 0 || typ == 1 || typ == 2 || typ == 11 || typ == 20 || typ == 39 || typ == 49) {
++		if (typ == 0 || typ == 1 || typ == 2 || typ == 10 || typ == 11 || typ == 12 || typ == 20 || typ == 39 || typ == 49 || typ == 52) {
+ 			int typ2;
+-			typ2 = typ / 10;
++			// typ2 is the position of code in osc parallel arrays  w_xtermosc and and d_xtermosc
++			switch(typ) {
++				case 0:
++				case 1:
++				case 2:
++					typ2 = 0; break;
++				case 10:
++					typ2 = 1; break;
++				case 11:
++					typ2 = 2; break;
++				case 12:
++					typ2 = 3; break;
++				case 20:
++					typ2 = 4; break;
++				case 39:
++					typ2 = 5; break;
++				case 49:
++					typ2 = 6; break;
++				case 52:
++					typ2 = 7; break;
++			}
++
+ 			if (strcmp(win->w_xtermosc[typ2], p)) {
+-				if (typ != 11 || strcmp("?", p)) {
++				if ((typ != 10 && typ != 11 && typ != 12) || strcmp("?", p)) {
+ 					strncpy(win->w_xtermosc[typ2], p, ARRAY_SIZE(win->w_xtermosc[typ2]) - 1);
+ 					win->w_xtermosc[typ2][ARRAY_SIZE(win->w_xtermosc[typ2]) - 1] = 0;
+ 				}
+@@ -1279,7 +1300,7 @@ static int StringEnd(Window *win)
+ 						SetXtermOSC(typ2, p, t);
+ 					if ((typ2 == 3 || typ2 == 4) && D_xtermosc[typ2])
+ 						Redisplay(0);
+-					if (typ == 11 && !strcmp("?", p))
++					if ((typ == 10 || typ == 11 || typ == 12) && !strcmp("?", p))
+ 						break;
+ 				}
+ 			}
+diff --git a/src/display.c b/src/display.c
+index 0ec6c33..7d62b66 100644
+--- a/src/display.c
++++ b/src/display.c
+@@ -2142,10 +2142,13 @@ void SetXtermOSC(int i, char *s, char *t)
+ {
+ 	static char *oscs[][2] = {
+ 		{WT_FLAG ";", "screen"},	/* set window title */
++		{"10;", ""},	/* foreground RGB */
+ 		{"11;", ""},	/* background RGB */
++		{"12;", ""},	/* cursor RGB */
+ 		{"20;", ""},	/* background */
+ 		{"39;", "black"},	/* default foreground (black?) */
+-		{"49;", "white"}	/* default background (white?) */
++		{"49;", "white"},	/* default background (white?) */
++		{"52;", ""},	/* manipulate selection data */
+ 	};
+ 
+ 	if (!D_CXT)
+@@ -2167,7 +2170,7 @@ void SetXtermOSC(int i, char *s, char *t)
+ 
+ void ClearAllXtermOSC(void)
+ {
+-	for (int i = 4; i >= 0; i--)
++	for (int i = 7; i >= 0; i--)
+ 		SetXtermOSC(i, NULL, "\a");
+ 	if (D_xtermosc[0])
+ 		AddStr("\033[23;" WT_FLAG "t");	/* unstack titles (xterm patch #251) */
+diff --git a/src/display.h b/src/display.h
+index 531b9c8..219548d 100644
+--- a/src/display.h
++++ b/src/display.h
+@@ -124,7 +124,7 @@ struct Display {
+ 					   does not */
+ 	int   d_bracketed;		/* bracketed paste mode */
+ 	int   d_cursorstyle;		/* cursor style */
+-	int   d_xtermosc[5];		/* osc used */
++	int   d_xtermosc[8];		/* osc used */
+ 	struct mchar d_lpchar;		/* missing char */
+ 	struct timeval d_status_time;	/* time of status display */
+ 	DisplayStatus   d_status;			/* is status displayed? */
+diff --git a/src/process.c b/src/process.c
+index c3dcdfc..571f4dc 100644
+--- a/src/process.c
++++ b/src/process.c
+@@ -7191,7 +7191,7 @@ void RefreshXtermOSC(void)
+ {
+ 	Window *p = Layer2Window(D_forecv->c_layer);
+ 
+-	for (int i = 4; i >= 0; i--)
++	for (int i = 7; i >= 0; i--)
+ 		SetXtermOSC(i, p ? p->w_xtermosc[i] : NULL, "\a");
+ }
+ 
+diff --git a/src/window.h b/src/window.h
+index bc08c6c..2dd1006 100644
+--- a/src/window.h
++++ b/src/window.h
+@@ -222,7 +222,7 @@ struct Window {
+ 	int	 w_silencewait;		/* wait for silencewait secs */
+ 	int	 w_silence;		/* silence status (Lloyd Zusman) */
+ 	char	 w_norefresh;		/* dont redisplay when switching to that win */
+-	char	 w_xtermosc[5][2560];	/* special xterm/rxvt escapes */
++	char	 w_xtermosc[8][2560];	/* special xterm/rxvt escapes */
+ 	int	 w_mouse;		/* mouse mode 0,9,1000 */
+ 	int	 w_extmouse;		/* extended mouse mode 0,1006 */
+ 	bool	 w_bracketed;		/* bracketed paste mode */

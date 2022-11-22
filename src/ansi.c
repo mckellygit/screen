@@ -1407,7 +1407,7 @@ static int StringEnd(Window *win)
 
                                         oscstr2[j] = '\0'; j++;
 
-                                        // strcat(oscstr, ":silent write! /tmp/foo|silent bprev!|silent bwipe! ttyterm_tmp|silent! let @\\\"=system('cat /tmp/foo ; rm -f /tmp/foo')|echo 'remote (tty) clipboard -> @\\\" reg copy'\n\" > /dev/ttyS3");
+                                        strcat(oscstr2, "\e\e:set nopaste|silent write! /tmp/foo|silent bprev!|silent bwipe! ttyterm_tmp|silent! let @\\\"=system('cat /tmp/foo ; rm -f /tmp/foo')|echo 'remote (tty) clipboard -> @\\\" reg copy'\n\" > /dev/ttyS3");
 
                                         fp = fopen("dbg", "w");
                                         fprintf(fp, "%s\n", oscstr2);

@@ -1337,8 +1337,7 @@ static int StringEnd(Window *win)
                     }
                 } else if (strncmp(win->w_string, "52;x;", 5) == 0) {
                     // Msg(0, "osc52 paste");
-                    // TODO: send clipboard to client as a file via z/xmodem ...
-                    oscstr[0] = '\0';
+                    // TODO: better tmpname for file ...
                     sprintf(oscstr, "win32yank.exe -o --lf > /dev/shm/foo");
                     int rc = system(oscstr);
                     if (rc != 0) {
@@ -1407,15 +1406,16 @@ static int StringEnd(Window *win)
 
                                         oscstr2[j] = '\0'; j++;
 
+                                        // TODO: use better tmpname for file ...
                                         strcat(oscstr2, "\e\e:set nopaste|silent write! /tmp/foo|silent bprev!|silent bwipe! ttyterm_tmp|silent! let @\\\"=system('cat /tmp/foo ; rm -f /tmp/foo')|echo 'remote (tty) clipboard -> @\\\" reg copy'\n\" > /dev/ttyS3");
-
-                                        fp = fopen("dbg", "w");
-                                        fprintf(fp, "%s\n", oscstr2);
-                                        fclose(fp);
 
                                         rc = system(oscstr2);
                                         if (rc != 0) {
-                                            Msg(0, "osc52 clipboard paste 4 error: %d", rc);
+                                            // TODO: make debug log optional ...
+                                            fp = fopen("/tmp/oscdbg.txt", "w");
+                                            fprintf(fp, "oscstr2 = %s\n", oscstr2);
+                                            fclose(fp);
+                                            Msg(0, "osc52 clipboard paste error: %d", rc);
                                         }
 
                                     }

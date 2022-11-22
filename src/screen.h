@@ -42,7 +42,7 @@
 #define Ctrl(c) ((c)&037)
 
 // #define MAXSTR		768
-#define MAXSTR		3000000
+#define MAXSTR		1000000
 #define MAXARGS 	64
 #define MSGWAIT 	700
 #define MSGMINWAIT 	500

@@ -70,8 +70,8 @@ struct mchar mchar_so = { ' ', A_RV, 0, 0, 0, 0};
 
 uint64_t renditions[NUM_RENDS] = { 65529 /* =ub */ , 65531 /* =b */ , 65533 /* =u */  };
 
-static char oscstr[100000] = { "" };
-static char oscstr2[100000] = { "" };
+static char oscstr[MAXSTR+10000] = { "" };
+static char oscstr2[MAXSTR+10000] = { "" };
 
 /* keep string_t and string_t_string in sync! */
 static char *string_t_string[] = {

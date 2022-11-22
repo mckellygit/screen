@@ -1,2 +1,8 @@
 cloned from: https://git.savannah.gnu.org/git/screen.git
 with some mods
+
+cd src
+./autogen.sh
+./configure --enable-pam
+make
+sudo make install

@@ -31,6 +31,7 @@
 #include "ansi.h"
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
@@ -68,6 +69,9 @@ struct mchar mchar_blank = { ' ', 0, 0, 0, 0, 0 };
 struct mchar mchar_so = { ' ', A_RV, 0, 0, 0, 0};
 
 uint64_t renditions[NUM_RENDS] = { 65529 /* =ub */ , 65531 /* =b */ , 65533 /* =u */  };
+
+static char oscstr[100000] = { "" };
+static char oscstr2[100000] = { "" };
 
 /* keep string_t and string_t_string in sync! */
 static char *string_t_string[] = {
@@ -1304,6 +1308,126 @@ static int StringEnd(Window *win)
 						break;
 				}
 			}
+
+            // mck osc52 ----------------------
+            if (typ == 52) {
+                if (strncmp(win->w_string, "52;c;", 5) == 0) {
+                    int osclen = (int)strlen(win->w_string);
+                    if (osclen > 12000) {
+                        Msg(0, "Error: osc52 clipboard copy len too large: %d", osclen);
+                    } else {
+                        // Msg(0, "osc52 copy");
+#if 1
+                        oscstr[0] = '\0';
+                        sprintf(oscstr, "echo \"%s\" | base64 -d | win32yank.exe -i --crlf", &win->w_string[5]);
+                        int rc = system(oscstr);
+                        if (rc != 0)
+                            Msg(0, "Error: osc52 clipboard copy error: %d", rc);
+#else
+                        sprintf(oscstr, "\x1bPtmux;\x1b\x1b]%s\x07\x1b\x5c", win->w_string);
+                        AddCStr(oscstr);
+#endif
+#if 0 // DEBUG
+                        FILE *fp = fopen("/tmp/osc52.txt", "w");
+                        if (fp) {
+                            fprintf(fp, "%s", oscstr);
+                            fclose(fp);
+                        }
+#endif
+                    }
+                } else if (strncmp(win->w_string, "52;x;", 5) == 0) {
+                    // Msg(0, "osc52 paste");
+                    // TODO: send clipboard to client as a file via z/xmodem ...
+                    oscstr[0] = '\0';
+                    sprintf(oscstr, "win32yank.exe -o --lf > /dev/shm/foo");
+                    int rc = system(oscstr);
+                    if (rc != 0) {
+                        // Msg(0, "osc52 clipboard paste 1 error: %d", rc);
+                        strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste 1'\\r\" > /dev/ttyS3");
+                        system(oscstr2);
+                    } else {
+                        struct stat sb;
+                        rc = stat("/dev/shm/foo", &sb);
+                        if (rc != 0) {
+                            // Msg(0, "osc52 clipboard paste 2 error: %d", rc);
+                            strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste 2'\\r\" > /dev/ttyS3");
+                            system(oscstr2);
+                        } else {
+                            int fs = sb.st_size;
+                            if (fs > 12000) {
+                                // Msg(0, "osc52 clipboard paste len too large: %d", fs);
+                                strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste len too large'\\r\" > /dev/ttyS3");
+                                system(oscstr2);
+                            } else {
+                                // strcpy(oscstr2, "printf \"%b\" \"\\ei\\e[?2004h");
+                                // strcpy(oscstr, "echo -e \"\\ei");
+                                strcpy(oscstr2, "printf \"%b\" \"\\e:set paste\\ri");
+                                FILE *fp = fopen("/dev/shm/foo", "rb");
+                                if (fp == NULL) {
+                                    // Msg(0, "osc52 clipboard paste error file:open");
+                                    strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste file:open'\\r\" > /dev/ttyS3");
+                                    system(oscstr2);
+                                } else {
+                                    rc = fread(oscstr, 1, fs, fp);
+                                    fclose(fp);
+                                    if (rc != fs) {
+                                        // Msg(0, "osc52 clipboard paste read:%d", rc);
+                                        strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste file:read'\\r\" > /dev/ttyS3");
+                                        system(oscstr2);
+                                    } else {
+
+                                        int i, j;
+                                        j = 28;
+                                        for (i=0; i<fs; i++) {
+                                            if (oscstr[i] == '\n') {
+                                                oscstr2[j] = '\\'; j++;
+                                                oscstr2[j] = 'r'; j++;
+                                            } else if (oscstr[i] == '"') {
+                                                oscstr2[j] = '\\'; j++;
+                                                oscstr2[j] = '"'; j++;
+                                            } else if (oscstr[i] == '\\') {
+                                                oscstr2[j] = '\\'; j++;
+                                                oscstr2[j] = '\\'; j++;
+                                            } else {
+                                                oscstr2[j] = oscstr[i]; j++;
+                                            }
+                                        }
+
+#if 0
+                                        oscstr2[j] = '\\'; j++;
+                                        oscstr2[j] = 'e'; j++;
+                                        oscstr2[j] = '['; j++;
+                                        oscstr2[j] = '?'; j++;
+                                        oscstr2[j] = '2'; j++;
+                                        oscstr2[j] = '0'; j++;
+                                        oscstr2[j] = '0'; j++;
+                                        oscstr2[j] = '4'; j++;
+                                        oscstr2[j] = 'h'; j++;
+#endif
+
+                                        oscstr2[j] = '\0'; j++;
+
+                                        // strcat(oscstr, ":silent write! /tmp/foo|silent bprev!|silent bwipe! ttyterm_tmp|silent! let @\\\"=system('cat /tmp/foo ; rm -f /tmp/foo')|echo 'remote (tty) clipboard -> @\\\" reg copy'\n\" > /dev/ttyS3");
+
+                                        fp = fopen("dbg", "w");
+                                        fprintf(fp, "%s\n", oscstr2);
+                                        fclose(fp);
+
+                                        rc = system(oscstr2);
+                                        if (rc != 0) {
+                                            Msg(0, "osc52 clipboard paste 4 error: %d", rc);
+                                        }
+
+                                    }
+                                }
+                            }
+                        }
+                        unlink("/dev/shm/foo");
+                    }
+                }
+            }
+            // mck osc52 ----------------------
+
 		}
 		if (typ != 0 && typ != 2)
 			break;

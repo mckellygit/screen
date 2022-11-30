@@ -1313,12 +1313,11 @@ static int StringEnd(Window *win)
             if (typ == 52) {
                 if (strncmp(win->w_string, "52;c;", 5) == 0) {
                     int osclen = (int)strlen(win->w_string);
-                    if (osclen > 12000) {
+                    if (osclen > 500000) {
                         Msg(0, "Error: osc52 clipboard copy len too large: %d", osclen);
                     } else {
                         // Msg(0, "osc52 copy");
 #if 1
-                        oscstr[0] = '\0';
                         sprintf(oscstr, "echo \"%s\" | base64 -d | win32yank.exe -i --crlf", &win->w_string[5]);
                         int rc = system(oscstr);
                         if (rc != 0)
@@ -1342,72 +1341,76 @@ static int StringEnd(Window *win)
                     int rc = system(oscstr);
                     if (rc != 0) {
                         // Msg(0, "osc52 clipboard paste 1 error: %d", rc);
-                        strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste 1'\\r\" > /dev/ttyS3");
+                        strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(1)\r\" > /dev/ttyS3");
                         system(oscstr2);
                     } else {
                         struct stat sb;
                         rc = stat("/dev/shm/foo", &sb);
                         if (rc != 0) {
                             // Msg(0, "osc52 clipboard paste 2 error: %d", rc);
-                            strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste 2'\\r\" > /dev/ttyS3");
+                            strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(2)\r\" > /dev/ttyS3");
                             system(oscstr2);
                         } else {
                             int fs = sb.st_size;
-                            if (fs > 12000) {
+                            if (fs > 500000) {
                                 // Msg(0, "osc52 clipboard paste len too large: %d", fs);
-                                strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste len too large'\\r\" > /dev/ttyS3");
+                                strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(3)\r\" > /dev/ttyS3");
                                 system(oscstr2);
                             } else {
-                                // strcpy(oscstr2, "printf \"%b\" \"\\ei\\e[?2004h");
-                                // strcpy(oscstr, "echo -e \"\\ei");
-                                strcpy(oscstr2, "printf \"%b\" \"\\e:set paste\\ri");
                                 FILE *fp = fopen("/dev/shm/foo", "rb");
                                 if (fp == NULL) {
                                     // Msg(0, "osc52 clipboard paste error file:open");
-                                    strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste file:open'\\r\" > /dev/ttyS3");
+                                    strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(4)\r\" > /dev/ttyS3");
                                     system(oscstr2);
                                 } else {
                                     rc = fread(oscstr, 1, fs, fp);
                                     fclose(fp);
                                     if (rc != fs) {
                                         // Msg(0, "osc52 clipboard paste read:%d", rc);
-                                        strcpy(oscstr2, "printf \"%b\" \"\\e\\e:silent bprev!|silent bwipe! ttyterm_tmp|echo 'Error: remote (tty) clipboard paste file:read'\\r\" > /dev/ttyS3");
+                                        strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(5)\r\" > /dev/ttyS3");
                                         system(oscstr2);
                                     } else {
 
-                                        int i, j;
-                                        j = 28;
-                                        for (i=0; i<fs; i++) {
-                                            if (oscstr[i] == '\n') {
+                                        strcpy(oscstr2, "printf \"%s\" \"\e\e[?2004hi");
+
+                                        // wait for \e[200~ ?
+
+                                        // strcpy(oscstr2, "printf \"%s\" \"\e:set paste\ri");
+                                        // strcpy(oscstr2, "printf \"%s\" \"\e\ei");
+                                        // strcpy(oscstr2, "printf \"%s\" \"\e\ei");
+                                        int j = (int)strlen(oscstr2);
+
+                                        for (int i=0; i<fs; i++) {
+                                            if (oscstr[i] == '') {
                                                 oscstr2[j] = '\\'; j++;
-                                                oscstr2[j] = 'r'; j++;
+                                                oscstr2[j] = 'e'; j++;
+                                            } else if (oscstr[i] == '') {
+                                                oscstr2[j] = ''; j++;
+                                                oscstr2[j] = ''; j++;
                                             } else if (oscstr[i] == '"') {
                                                 oscstr2[j] = '\\'; j++;
                                                 oscstr2[j] = '"'; j++;
-                                            } else if (oscstr[i] == '\\') {
+                                            } else if (oscstr[i] == '`') {
                                                 oscstr2[j] = '\\'; j++;
+                                                oscstr2[j] = '`'; j++;
+                                            } else if (oscstr[i] == '$') {
                                                 oscstr2[j] = '\\'; j++;
+                                                oscstr2[j] = '$'; j++;
                                             } else {
                                                 oscstr2[j] = oscstr[i]; j++;
                                             }
                                         }
 
-#if 0
-                                        oscstr2[j] = '\\'; j++;
-                                        oscstr2[j] = 'e'; j++;
-                                        oscstr2[j] = '['; j++;
-                                        oscstr2[j] = '?'; j++;
-                                        oscstr2[j] = '2'; j++;
-                                        oscstr2[j] = '0'; j++;
-                                        oscstr2[j] = '0'; j++;
-                                        oscstr2[j] = '4'; j++;
-                                        oscstr2[j] = 'h'; j++;
-#endif
-
                                         oscstr2[j] = '\0'; j++;
 
-                                        // TODO: use better tmpname for file ...
-                                        strcat(oscstr2, "\e\e:set nopaste|silent write! /tmp/foo|silent bprev!|silent bwipe! ttyterm_tmp|silent! let @\\\"=system('cat /tmp/foo ; rm -f /tmp/foo')|echo 'remote (tty) clipboard -> @\\\" reg copy'\n\" > /dev/ttyS3");
+                                        // <F16> should be ^[[29~ or perhaps ^[[14;2~
+                                        // strcat(oscstr2, "\e\e\e[29~\" > /dev/ttyS3");
+
+                                        // strcat(oscstr2, "\e\e[H\e[J\e:call PostPaste(0)\r\" > /dev/ttyS3");
+                                        // strcat(oscstr2, "\e\e:call PostPaste(0)\r\" > /dev/ttyS3");
+                                        strcat(oscstr2, "\e[?2004h\e:call PostPaste(0)\r\" > /dev/ttyS3");
+
+                                        // wait for \e[201~ ?
 
                                         rc = system(oscstr2);
                                         if (rc != 0) {

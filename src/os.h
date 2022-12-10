@@ -156,7 +156,8 @@ typedef char* slot_t;	/* used internally in utmp.c */
  * tends to choke when pasting. Use high values if you want to test
  * how many characters your pty's can buffer.
  */
-#define IOSIZE		4096
+// #define IOSIZE		4096
+#define IOSIZE		1000000
 
 /* Changing those you won't be able to attach to your old sessions
  * when changing those values in official tree don't forget to bump

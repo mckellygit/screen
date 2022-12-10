@@ -44,8 +44,8 @@
 // #define MAXSTR		768
 #define MAXSTR		1000000
 #define MAXARGS 	64
-#define MSGWAIT 	700
-#define MSGMINWAIT 	500
+#define MSGWAIT 	1400
+#define MSGMINWAIT 	900
 #define SILENCEWAIT	30
 
 /*

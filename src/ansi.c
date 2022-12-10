@@ -1311,121 +1311,144 @@ static int StringEnd(Window *win)
 
             // mck osc52 ----------------------
             if (typ == 52) {
+
                 if (strncmp(win->w_string, "52;c;", 5) == 0) {
-                    int osclen = (int)strlen(win->w_string);
+
+                    int osclen = (int)strlen(win->w_string) - 5;
                     if (osclen > 500000) {
                         Msg(0, "Error: osc52 clipboard copy len too large: %d", osclen);
                     } else {
-                        // Msg(0, "osc52 copy");
-#if 1
-                        sprintf(oscstr, "echo \"%s\" | base64 -d | win32yank.exe -i --crlf", &win->w_string[5]);
-                        int rc = system(oscstr);
-                        if (rc != 0)
-                            Msg(0, "Error: osc52 clipboard copy error: %d", rc);
-#else
-                        sprintf(oscstr, "\x1bPtmux;\x1b\x1b]%s\x07\x1b\x5c", win->w_string);
-                        AddCStr(oscstr);
-#endif
-#if 0 // DEBUG
-                        FILE *fp = fopen("/tmp/osc52.txt", "w");
-                        if (fp) {
-                            fprintf(fp, "%s", oscstr);
-                            fclose(fp);
+                        char oscfile[200];
+                        sprintf(oscfile, "/tmp/osc52copy-%d", getpid());
+                        int oscfd = open(oscfile, O_CREAT | O_WRONLY | O_EXCL, 0600);
+                        if (oscfd >= 0)
+                        {
+                            int rc = write(oscfd, &win->w_string[5], osclen);
+                            if (rc == osclen)
+                            {
+                                sprintf(oscstr, "base64 -d < %s | win32yank.exe -i --crlf", oscfile);
+                                int rc = system(oscstr);
+                                if (rc != 0)
+                                    Msg(0, "Error: osc52 clipboard copy system error: %d %d", rc, errno);
+                                // else
+                                //     Msg(0, "osc52 copy");
+                            }
+                            else
+                                Msg(0, "Error: osc52 clipboard copy tmpfile write error: %d", errno);
+                            close(oscfd);
+                            unlink(oscfile);
                         }
-#endif
+                        else
+                            Msg(0, "Error: osc52 clipboard copy tmpfile open error: %d", errno);
                     }
+
                 } else if (strncmp(win->w_string, "52;x;", 5) == 0) {
-                    // Msg(0, "osc52 paste");
-                    // TODO: better tmpname for file ...
-                    sprintf(oscstr, "win32yank.exe -o --lf > /dev/shm/foo");
-                    int rc = system(oscstr);
+
+                    int rc, olen;
+                    char oscfile[200];
+                    sprintf(oscfile, "/tmp/osc52paste-%d", getpid());
+                    sprintf(oscstr, "win32yank.exe -o --lf | base64 > %s", oscfile);
+                    rc = system(oscstr);
                     if (rc != 0) {
                         // Msg(0, "osc52 clipboard paste 1 error: %d", rc);
-                        strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(1)\r\" > /dev/ttyS3");
-                        system(oscstr2);
+                        strcpy(oscstr2, "\e\e:call PostPaste(1)\r");
+                        olen = (int)strlen(oscstr2);
+                        write(win->w_ptyfd, oscstr2, olen);
                     } else {
                         struct stat sb;
-                        rc = stat("/dev/shm/foo", &sb);
+                        rc = stat(oscfile, &sb);
                         if (rc != 0) {
                             // Msg(0, "osc52 clipboard paste 2 error: %d", rc);
-                            strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(2)\r\" > /dev/ttyS3");
-                            system(oscstr2);
+                            strcpy(oscstr2, "\e\e:call PostPaste(2)\r");
+                            olen = (int)strlen(oscstr2);
+                            write(win->w_ptyfd, oscstr2, olen);
                         } else {
                             int fs = sb.st_size;
-                            if (fs > 500000) {
+                            if (fs > 700000) { // approx 4/3 larger than orig input ...
                                 // Msg(0, "osc52 clipboard paste len too large: %d", fs);
-                                strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(3)\r\" > /dev/ttyS3");
-                                system(oscstr2);
+                                strcpy(oscstr2, "\e\e:call PostPaste(3)\r");
+                                olen = (int)strlen(oscstr2);
+                                write(win->w_ptyfd, oscstr2, olen);
                             } else {
-                                FILE *fp = fopen("/dev/shm/foo", "rb");
-                                if (fp == NULL) {
-                                    // Msg(0, "osc52 clipboard paste error file:open");
-                                    strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(4)\r\" > /dev/ttyS3");
-                                    system(oscstr2);
+                                int oscfd = open(oscfile, O_RDONLY);
+                                if (oscfd <= 0)
+                                {
+                                    // Msg(0, "osc52 clipboard paste open error: %d", errno);
+                                    strcpy(oscstr2, "\e\e:call PostPaste(4)\r");
+                                    olen = (int)strlen(oscstr2);
+                                    write(win->w_ptyfd, oscstr2, olen);
                                 } else {
-                                    rc = fread(oscstr, 1, fs, fp);
-                                    fclose(fp);
+                                    rc = read(oscfd, oscstr, fs);
                                     if (rc != fs) {
-                                        // Msg(0, "osc52 clipboard paste read:%d", rc);
-                                        strcpy(oscstr2, "printf \"%s\" \"\e\e:call PostPaste(5)\r\" > /dev/ttyS3");
-                                        system(oscstr2);
+                                        // Msg(0, "osc52 clipboard paste read error: %d", rc);
+                                        strcpy(oscstr2, "\e\e:call PostPaste(5)\r");
+                                        olen = (int)strlen(oscstr2);
+                                        write(win->w_ptyfd, oscstr2, olen);
                                     } else {
 
-                                        strcpy(oscstr2, "printf \"%s\" \"\e\e[?2004hi");
-
-                                        // wait for \e[200~ ?
-
-                                        // strcpy(oscstr2, "printf \"%s\" \"\e:set paste\ri");
-                                        // strcpy(oscstr2, "printf \"%s\" \"\e\ei");
-                                        // strcpy(oscstr2, "printf \"%s\" \"\e\ei");
+                                        strcpy(oscstr2, "\ei\e[?2004h");
                                         int j = (int)strlen(oscstr2);
+                                        oscstr2[j] = '\0'; j++;
+                                        strcat(oscstr2, oscstr);
 
-                                        for (int i=0; i<fs; i++) {
-                                            if (oscstr[i] == '') {
-                                                oscstr2[j] = '\\'; j++;
-                                                oscstr2[j] = 'e'; j++;
-                                            } else if (oscstr[i] == '') {
-                                                oscstr2[j] = ''; j++;
-                                                oscstr2[j] = ''; j++;
-                                            } else if (oscstr[i] == '"') {
-                                                oscstr2[j] = '\\'; j++;
-                                                oscstr2[j] = '"'; j++;
-                                            } else if (oscstr[i] == '`') {
-                                                oscstr2[j] = '\\'; j++;
-                                                oscstr2[j] = '`'; j++;
-                                            } else if (oscstr[i] == '$') {
-                                                oscstr2[j] = '\\'; j++;
-                                                oscstr2[j] = '$'; j++;
+                                        // could send <F16> instead of a call ... should be ^[[29~ or perhaps ^[[14;2~
+
+                                        strcat(oscstr2, "\e[?2004h\e:call PostPaste(0)\r");
+
+                                        tcdrain(win->w_ptyfd);
+
+                                        int wlen = (int)strlen(oscstr2);
+                                        int numx = wlen / 32;
+                                        int xlen = 0;
+                                        int fail = 0;
+                                        for (j=0; j<numx; j++)
+                                        {
+                                            rc = write(win->w_ptyfd, &oscstr2[xlen], 32);
+                                            if (rc > 0)
+                                            {
+                                                xlen += rc;
+                                                tcdrain(win->w_ptyfd);
+                                                usleep(1000);
+                                            } else if (rc < 0) {
+                                                fail = errno;
+                                                break;
                                             } else {
-                                                oscstr2[j] = oscstr[i]; j++;
+                                                tcdrain(win->w_ptyfd);
+                                                usleep(100);
                                             }
                                         }
-
-                                        oscstr2[j] = '\0'; j++;
-
-                                        // <F16> should be ^[[29~ or perhaps ^[[14;2~
-                                        // strcat(oscstr2, "\e\e\e[29~\" > /dev/ttyS3");
-
-                                        // strcat(oscstr2, "\e\e[H\e[J\e:call PostPaste(0)\r\" > /dev/ttyS3");
-                                        // strcat(oscstr2, "\e\e:call PostPaste(0)\r\" > /dev/ttyS3");
-                                        strcat(oscstr2, "\e[?2004h\e:call PostPaste(0)\r\" > /dev/ttyS3");
-
-                                        // wait for \e[201~ ?
-
-                                        rc = system(oscstr2);
-                                        if (rc != 0) {
-                                            // TODO: make debug log optional ...
-                                            fp = fopen("/tmp/oscdbg.txt", "w");
-                                            fprintf(fp, "oscstr2 = %s\n", oscstr2);
-                                            fclose(fp);
-                                            Msg(0, "osc52 clipboard paste error: %d", rc);
+                                        if (!fail) {
+                                            int rlen = wlen - xlen;
+                                            while (rlen > 0) {
+                                                rc = write(win->w_ptyfd, &oscstr2[xlen], rlen);
+                                                if (rc > 0)
+                                                {
+                                                    xlen += rc;
+                                                    rlen -= rc;
+                                                    tcdrain(win->w_ptyfd);
+                                                    usleep(1000);
+                                                } else if (rc < 0) {
+                                                    fail = errno;
+                                                    break;
+                                                } else {
+                                                    tcdrain(win->w_ptyfd);
+                                                    usleep(100);
+                                                }
+                                            }
                                         }
-
+                                        if (fail) {
+                                            // Msg(0, "osc52 clipboard paste error: %d", fail);
+                                            strcpy(oscstr2, "\e\e:call PostPaste(6)\r");
+                                            olen = (int)strlen(oscstr2);
+                                            write(win->w_ptyfd, oscstr2, olen);
+                                        } // else
+                                        //     Msg(0, "osc52 paste");
                                     }
+                                    close(oscfd);
                                 }
                             }
                         }
-                        unlink("/dev/shm/foo");
+                        unlink(oscfile);
                     }
                 }
             }

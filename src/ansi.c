@@ -70,6 +70,8 @@ struct mchar mchar_so = { ' ', A_RV, 0, 0, 0, 0};
 
 uint64_t renditions[NUM_RENDS] = { 65529 /* =ub */ , 65531 /* =b */ , 65533 /* =u */  };
 
+int max_osc52_len = 667000; // 500k * 4/3 ...
+
 static char oscstr[MAXSTR+10000] = { "" };
 static char oscstr2[MAXSTR+10000] = { "" };
 
@@ -1315,7 +1317,7 @@ static int StringEnd(Window *win)
                 if (strncmp(win->w_string, "52;c;", 5) == 0) {
 
                     int osclen = (int)strlen(win->w_string) - 5;
-                    if (osclen > 500000) {
+                    if (osclen > max_osc52_len) {
                         Msg(0, "Error: osc52 clipboard copy len too large: %d", osclen);
                     } else {
                         char oscfile[200];
@@ -1364,7 +1366,7 @@ static int StringEnd(Window *win)
                             write(win->w_ptyfd, oscstr2, olen);
                         } else {
                             int fs = sb.st_size;
-                            if (fs > 700000) { // approx 4/3 larger than orig input ...
+                            if (fs > max_osc52_len) { // approx 4/3 larger than orig input ...
                                 // Msg(0, "osc52 clipboard paste len too large: %d", fs);
                                 strcpy(oscstr2, "\e\e:call PostPaste(3)\r");
                                 olen = (int)strlen(oscstr2);
@@ -1387,9 +1389,9 @@ static int StringEnd(Window *win)
                                     } else {
 
                                         strcpy(oscstr2, "\ei\e[?2004h");
-                                        int j = (int)strlen(oscstr2);
-                                        oscstr2[j] = '\0'; j++;
+                                        strcat(oscstr2, "\n\n\n\n\n");
                                         strcat(oscstr2, oscstr);
+                                        strcat(oscstr2, "\n\n\n\n\n");
 
                                         // could send <F16> instead of a call ... should be ^[[29~ or perhaps ^[[14;2~
 
@@ -1401,6 +1403,114 @@ static int StringEnd(Window *win)
                                         int numx = wlen / 32;
                                         int xlen = 0;
                                         int fail = 0;
+                                        int j = 0;
+                                        for (j=0; j<numx; j++)
+                                        {
+                                            rc = write(win->w_ptyfd, &oscstr2[xlen], 32);
+                                            if (rc > 0)
+                                            {
+                                                xlen += rc;
+                                                tcdrain(win->w_ptyfd);
+                                                usleep(1000);
+                                            } else if (rc < 0) {
+                                                fail = errno;
+                                                break;
+                                            } else {
+                                                tcdrain(win->w_ptyfd);
+                                                usleep(100);
+                                            }
+                                        }
+                                        if (!fail) {
+                                            int rlen = wlen - xlen;
+                                            while (rlen > 0) {
+                                                rc = write(win->w_ptyfd, &oscstr2[xlen], rlen);
+                                                if (rc > 0)
+                                                {
+                                                    xlen += rc;
+                                                    rlen -= rc;
+                                                    tcdrain(win->w_ptyfd);
+                                                    usleep(1000);
+                                                } else if (rc < 0) {
+                                                    fail = errno;
+                                                    break;
+                                                } else {
+                                                    tcdrain(win->w_ptyfd);
+                                                    usleep(100);
+                                                }
+                                            }
+                                        }
+                                        if (fail) {
+                                            // Msg(0, "osc52 clipboard paste error: %d", fail);
+                                            strcpy(oscstr2, "\e\e:call PostPaste(6)\r");
+                                            olen = (int)strlen(oscstr2);
+                                            write(win->w_ptyfd, oscstr2, olen);
+                                        } // else
+                                        //     Msg(0, "osc52 paste");
+                                    }
+                                    close(oscfd);
+                                }
+                            }
+                        }
+                        unlink(oscfile);
+                    }
+
+                } else if (strncmp(win->w_string, "52;y;", 5) == 0) {
+
+                    int rc, olen;
+                    char oscfile[200];
+                    sprintf(oscfile, "/tmp/osc52paste-%d", getpid());
+                    sprintf(oscstr, "win32yank.exe -o --lf | base64 > %s", oscfile);
+                    rc = system(oscstr);
+                    if (rc != 0) {
+                        // Msg(0, "osc52 clipboard paste 1 error: %d", rc);
+                        strcpy(oscstr2, "\e\e:call PostPaste(1)\r");
+                        olen = (int)strlen(oscstr2);
+                        write(win->w_ptyfd, oscstr2, olen);
+                    } else {
+                        struct stat sb;
+                        rc = stat(oscfile, &sb);
+                        if (rc != 0) {
+                            // Msg(0, "osc52 clipboard paste 2 error: %d", rc);
+                            strcpy(oscstr2, "\e\e:call PostPaste(2)\r");
+                            olen = (int)strlen(oscstr2);
+                            write(win->w_ptyfd, oscstr2, olen);
+                        } else {
+                            int fs = sb.st_size;
+                            if (fs > max_osc52_len) { // approx 4/3 larger than orig input ...
+                                // Msg(0, "osc52 clipboard paste len too large: %d", fs);
+                                strcpy(oscstr2, "\e\e:call PostPaste(3)\r");
+                                olen = (int)strlen(oscstr2);
+                                write(win->w_ptyfd, oscstr2, olen);
+                            } else {
+                                int oscfd = open(oscfile, O_RDONLY);
+                                if (oscfd <= 0)
+                                {
+                                    // Msg(0, "osc52 clipboard paste open error: %d", errno);
+                                    strcpy(oscstr2, "\e\e:call PostPaste(4)\r");
+                                    olen = (int)strlen(oscstr2);
+                                    write(win->w_ptyfd, oscstr2, olen);
+                                } else {
+                                    rc = read(oscfd, oscstr, fs);
+                                    if (rc != fs) {
+                                        // Msg(0, "osc52 clipboard paste read error: %d", rc);
+                                        strcpy(oscstr2, "\e\e:call PostPaste(5)\r");
+                                        olen = (int)strlen(oscstr2);
+                                        write(win->w_ptyfd, oscstr2, olen);
+                                    } else {
+
+                                        strcpy(oscstr2, oscstr);
+
+                                        // non-base64 alphabet EOF delimiter ...
+                                        strcat(oscstr2, "\n|[{.}]|");
+                                        // or just an \x04 (ctrl-d, EOT) ?
+
+                                        tcdrain(win->w_ptyfd);
+
+                                        int wlen = (int)strlen(oscstr2);
+                                        int numx = wlen / 32;
+                                        int xlen = 0;
+                                        int fail = 0;
+                                        int j = 0;
                                         for (j=0; j<numx; j++)
                                         {
                                             rc = write(win->w_ptyfd, &oscstr2[xlen], 32);

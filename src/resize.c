@@ -809,6 +809,7 @@ void EnterAltScreen(Window *p)
 	}
 	ChangeWindowSize(p, p->w_alt.width, p->w_alt.height, p->w_alt.histheight);
 	p->w_alt.on = 1;
+	AddStr("\033[?1049h");
 }
 
 void LeaveAltScreen(Window *p)
@@ -819,4 +820,5 @@ void LeaveAltScreen(Window *p)
 	ChangeWindowSize(p, p->w_alt.width, p->w_alt.height, p->w_alt.histheight);
 	FreeAltScreen(p);
 	p->w_alt.on = 0;
+	AddStr("\033[?1049l");
 }

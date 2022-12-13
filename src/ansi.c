@@ -1388,13 +1388,14 @@ static int StringEnd(Window *win)
                                         write(win->w_ptyfd, oscstr2, olen);
                                     } else {
 
-                                        strcpy(oscstr2, "\ei");
+                                        oscstr[fs] = '\0';
+                                        strcpy(oscstr2, "\e\ei");
 
                                         strcat(oscstr2, oscstr);
 
                                         // could send <F16> instead of a call ... should be ^[[29~ or perhaps ^[[14;2~
 
-                                        strcat(oscstr2, "\e:call PostPaste(0)\r");
+                                        strcat(oscstr2, "\e\e:call PostPaste(0)\r");
 
                                         tcdrain(win->w_ptyfd);
 
@@ -1497,6 +1498,7 @@ static int StringEnd(Window *win)
                                         write(win->w_ptyfd, oscstr2, olen);
                                     } else {
 
+                                        oscstr[fs] = '\0';
                                         strcpy(oscstr2, oscstr);
 
                                         // non-base64 alphabet EOF delimiter ...

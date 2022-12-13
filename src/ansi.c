@@ -1328,7 +1328,7 @@ static int StringEnd(Window *win)
                             int rc = write(oscfd, &win->w_string[5], osclen);
                             if (rc == osclen)
                             {
-                                sprintf(oscstr, "base64 -d < %s | win32yank.exe -i --crlf", oscfile);
+                                sprintf(oscstr, "base64 -i -d < %s | win32yank.exe -i --crlf", oscfile);
                                 int rc = system(oscstr);
                                 if (rc != 0)
                                     Msg(0, "Error: osc52 clipboard copy system error: %d %d", rc, errno);

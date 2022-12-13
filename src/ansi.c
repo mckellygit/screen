@@ -1388,14 +1388,13 @@ static int StringEnd(Window *win)
                                         write(win->w_ptyfd, oscstr2, olen);
                                     } else {
 
-                                        strcpy(oscstr2, "\ei\e[?2004h");
-                                        strcat(oscstr2, "\n\n\n\n\n");
+                                        strcpy(oscstr2, "\ei");
+
                                         strcat(oscstr2, oscstr);
-                                        strcat(oscstr2, "\n\n\n\n\n");
 
                                         // could send <F16> instead of a call ... should be ^[[29~ or perhaps ^[[14;2~
 
-                                        strcat(oscstr2, "\e[?2004h\e:call PostPaste(0)\r");
+                                        strcat(oscstr2, "\e:call PostPaste(0)\r");
 
                                         tcdrain(win->w_ptyfd);
 
